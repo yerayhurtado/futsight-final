@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Player {
+  id              Int     @id @default(autoincrement())
+  playerID        Int
+  player          String
+  squad           String
+  league          String?
+  nation          String?
+  pos_main        String
+  age             Int?
+  season          String?
+  marketValue     Float?
+  clusterId       Int?
+  puresaPerfil    Float?
+  esHibrid        String?
+  perfilNom       String?
+  perfilPrincipal String?
+  perfilSecundari String?
+  perfilHistorico String?
+  strCutout       String?
+  piernaBuena     String?
+  altura          Float?
+
+  // FBref advanced metrics stored as serialized JSON
+  statsJson       String
+}

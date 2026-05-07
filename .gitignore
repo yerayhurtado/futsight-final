@@ -1,0 +1,29 @@
+# Entornos Virtuales Python (para futsigh_agent)
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node / Frontend (para futsight-web)
+node_modules/
+.next/
+out/
+build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# SO y Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs y bases de datos locales
+logs/
+*.log
+*.sqlite3
