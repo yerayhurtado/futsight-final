@@ -197,7 +197,7 @@ export default function ScoutingPage() {
                                 <select
                                     value={sortBy}
                                     onChange={(e) => { setSortBy(e.target.value); setCurrentPage(1); }}
-                                    className="w-full px-4 py-4 glass border border-white/10 rounded-2xl text-white text-sm font-medium outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 shadow-xl"
+                                    className="w-full px-4 py-4 glass border border-white/10 rounded-2xl text-white text-sm font-medium outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 shadow-xl transition-all"
                                 >
                                     <option value="valor-desc">Valor de mercado ↓</option>
                                     <option value="valor-asc">Valor de mercado ↑</option>
@@ -236,32 +236,32 @@ export default function ScoutingPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 relative z-10">
                                     <div>
                                         <label className="text-xs font-black text-gray-400 mb-3 block uppercase tracking-widest">Posición</label>
-                                        <select value={selectedPosition} onChange={(e) => setSelectedPosition(e.target.value)} className="w-full glass-dark text-white p-3 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50">
-                                            <option value="">Todas</option>
+                                        <select value={selectedPosition} onChange={(e) => setSelectedPosition(e.target.value)} className="w-full glass-dark text-white p-3.5 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/5 transition-all">
+                                            <option value="">Todas las posiciones</option>
                                             {positions.map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
                                         </select>
                                     </div>
                                     <div>
                                         <label className="text-xs font-black text-gray-400 mb-3 block uppercase tracking-widest">Perfil IA</label>
-                                        <select value={selectedPerfil} onChange={(e) => setSelectedPerfil(e.target.value)} className="w-full glass-dark text-white p-3 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50">
-                                            <option value="">Todos</option>
+                                        <select value={selectedPerfil} onChange={(e) => setSelectedPerfil(e.target.value)} className="w-full glass-dark text-white p-3.5 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/5 transition-all">
+                                            <option value="">Todos los perfiles</option>
                                             {allPerfiles.map(p => <option key={p} value={p}>{p}</option>)}
                                         </select>
                                     </div>
                                     <div>
                                         <label className="text-xs font-black text-gray-400 mb-3 block uppercase tracking-widest">Nacionalidad</label>
-                                        <select value={selectedNation} onChange={(e) => setSelectedNation(e.target.value)} className="w-full glass-dark text-white p-3 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50">
-                                            <option value="">Todas</option>
+                                        <select value={selectedNation} onChange={(e) => setSelectedNation(e.target.value)} className="w-full glass-dark text-white p-3.5 rounded-xl border border-white/10 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/5 transition-all">
+                                            <option value="">Todas las naciones</option>
                                             {nations.map(n => <option key={n} value={n}>{n}</option>)}
                                         </select>
                                     </div>
                                     <div>
                                         <label className="text-xs font-black text-gray-400 mb-3 block uppercase tracking-widest">Edad Mín.</label>
-                                        <input type="number" value={ageRange.min} onChange={(e) => setAgeRange({...ageRange, min: e.target.value})} className="w-full glass-dark text-white p-3 rounded-xl border border-white/10 focus:border-emerald-500/50 outline-none" />
+                                        <input type="number" value={ageRange.min} onChange={(e) => setAgeRange({...ageRange, min: e.target.value})} className="w-full glass-dark text-white p-3.5 rounded-xl border border-white/10 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/5 outline-none transition-all" />
                                     </div>
                                     <div>
                                         <label className="text-xs font-black text-gray-400 mb-3 block uppercase tracking-widest">Edad Máx.</label>
-                                        <input type="number" value={ageRange.max} onChange={(e) => setAgeRange({...ageRange, max: e.target.value})} className="w-full glass-dark text-white p-3 rounded-xl border border-white/10 focus:border-emerald-500/50 outline-none" />
+                                        <input type="number" value={ageRange.max} onChange={(e) => setAgeRange({...ageRange, max: e.target.value})} className="w-full glass-dark text-white p-3.5 rounded-xl border border-white/10 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/5 outline-none transition-all" />
                                     </div>
                                 </div>
                             </motion.div>

@@ -172,8 +172,10 @@ def _get_db_path() -> Path:
     # Intentar subir desde futsigh_agent a la raíz del monorepo
     root = Path(__file__).resolve().parent.parent.parent
     candidates = [
+        root / "dev.db",
         root / "futsight-web" / "dev.db",
         root / "futsight-web" / "prisma" / "dev.db",
+        Path.cwd() / "dev.db",
         Path.cwd().parent / "futsight-web" / "dev.db",
         Path.cwd().parent / "futsight-web" / "prisma" / "dev.db",
     ]
@@ -786,15 +788,9 @@ def _aplicar_filtros_df(df: pd.DataFrame, filtros: dict, min_minutos_override=No
     return mask
 
 
-def _calcular_score_contextual(df_subset: pd.DataFrame, filtros: dict) -> pd.Series:
+def _calcular_score_contextual(df_subset: pd.DataFrame, filtros: dict, ref_cluster: Optional[int] = None) -> pd.Series:
     """
     Calcula un score de ordenación adaptado al criterio de búsqueda.
-
-    Las stats ya vienen promediadas por 90 min desde _cargar_df.
-    Se aplican tres capas:
-      1. Score base ponderado según lo que buscó el usuario.
-      2. Factor de fiabilidad (penaliza jugadores con pocos minutos).
-      3. Recency bonus (penaliza jugadores sin datos en la temporada actual).
     """
     # Stats base (media por 90 min)
     g   = df_subset["Gls_90"].fillna(0) if "Gls_90" in df_subset.columns else df_subset["Gls"].fillna(0)
@@ -827,6 +823,11 @@ def _calcular_score_contextual(df_subset: pd.DataFrame, filtros: dict) -> pd.Ser
         + tkl * wt + int_ * wi
         + sca * 0.2 + (pp + pr) * 0.15
     )
+
+    # BOOST POR CLUSTER DE REFERENCIA (SIMILITUD ESTADÍSTICA)
+    if ref_cluster is not None and "Cluster_ID" in df_subset.columns:
+        # Multiplicador potente para jugadores del mismo clúster GMM
+        score = score.where(df_subset["Cluster_ID"] != ref_cluster, score * 2.5)
 
     # Factor de fiabilidad: necesita ~900 min para score completo
     min_w = df_subset["Min_Weighted"].fillna(0) if "Min_Weighted" in df_subset.columns else 0
@@ -908,17 +909,25 @@ def search_node(state: AgentState) -> dict:
     query = state.get("query", "") or ""
     filtros = state.get("filters") or {}
 
-    # Carga optimizada (SQL filter)
-    df, error = _get_df(filters=filtros)
+    # Carga de datos
+    nombre_ref = _extraer_nombre_referencia(query)
+    
+    # Si hay una referencia (ej: "como Lamine"), necesitamos TODA la DB para encontrarlo,
+    # no solo el subset filtrado por SQL (ej: Alemania).
+    if nombre_ref:
+        df, error = _get_df() # Carga global
+    else:
+        df, error = _get_df(filters=filtros) # Carga optimizada
+        
     if df is None or df.empty:
-        # Reintento sin filtros SQL si falló o no dio resultados (fallback global)
+        # Reintento sin filtros SQL si falló
         df, error = _get_df()
         if df is None:
             print(f"   ERROR cargando datos: {error}")
             return {"players": [], "filtros_relajados": None}
 
     # ── Jugador de referencia: "tipo Haaland", "como X" ───────────────────────
-    nombre_ref = _extraer_nombre_referencia(query)
+    ref_cluster = None
     if nombre_ref:
         try:
             ids_ref = _buscar_por_nombre(df, nombre_ref, max_results=1)
@@ -926,32 +935,35 @@ def search_node(state: AgentState) -> dict:
                 ref_id = ids_ref[0]
                 fila_ref = df[df["PlayerID"] == ref_id].iloc[0]
                 print(f"   Referencia a jugador tipo: {fila_ref.get('Player')} (ID={ref_id})")
-                # Posición principal
+                
+                # 1. Cluster estadístico (GMM)
+                ref_cluster = _safe_int(fila_ref.get("Cluster_ID"))
+
+                # 2. Perfil IA (Extremo, Marcador, etc.)
+                if not filtros.get("perfil_principal"):
+                    p_hist = fila_ref.get("Perfil_Historico") or fila_ref.get("Perfil_Principal")
+                    if p_hist and pd.notna(p_hist):
+                        filtros["perfil_principal"] = str(p_hist)
+
+                # 3. Posición principal
                 if not filtros.get("pos") and pd.notna(fila_ref.get("Pos_Main")):
                     filtros["pos"] = str(fila_ref["Pos_Main"]).lower()
-                # Liga
-                if not filtros.get("league") and pd.notna(fila_ref.get("League")):
-                    filtros["league"] = str(fila_ref["League"]).lower()
-                # Nación
-                if not filtros.get("nation") and pd.notna(fila_ref.get("Nation")):
-                    filtros["nation"] = str(fila_ref["Nation"]).lower()
-                # Pierna buena
-                if not filtros.get("foot") and "Pierna_Buena" in df.columns and pd.notna(fila_ref.get("Pierna_Buena")):
-                    pie = str(fila_ref["Pierna_Buena"]).strip().lower()
-                    if pie in {"left", "right", "both"}:
-                        filtros["foot"] = pie
-                # Rango de edad aproximado (±3 años) si no lo fijó ya el analyzer
-                edad = _safe_int(fila_ref.get("Age"))
-                if edad:
-                    if filtros.get("min_age") is None:
-                        filtros["min_age"] = max(16, edad - 3)
+
+                # 4. Smart Age Matching (Si el ref es joven, buscar jóvenes)
+                edad_ref = _safe_int(fila_ref.get("Age"))
+                if edad_ref and edad_ref <= 22:
                     if filtros.get("max_age") is None:
-                        filtros["max_age"] = edad + 3
-                # Valor de mercado: si se menciona "barato" o "más barato", limitar techo
+                        filtros["max_age"] = min(25, edad_ref + 3)
+                elif edad_ref:
+                    # Rango ±3 años por defecto
+                    if filtros.get("min_age") is None: filtros["min_age"] = max(16, edad_ref - 4)
+                    if filtros.get("max_age") is None: filtros["max_age"] = edad_ref + 4
+
+                # 5. Valor de mercado
                 q_low = query.lower()
                 valor_ref = _safe_int(fila_ref.get("Valor_Mercado") or fila_ref.get("market_value_in_eur"))
-                if valor_ref and any(t in q_low for t in ("barato", "más barato", "mas barato", "más asequible", "mas asequible")):
-                    techo = int(valor_ref * 0.6)
+                if valor_ref and any(t in q_low for t in ("barato", "más barato", "mas barato", "más asequible")):
+                    techo = int(valor_ref * 0.7)
                     if filtros.get("max_market_value") is None or techo < _safe_int(filtros.get("max_market_value"), techo):
                         filtros["max_market_value"] = techo
         except Exception as e:
@@ -967,7 +979,7 @@ def search_node(state: AgentState) -> dict:
         """Aplica filtros, calcula score y devuelve top N."""
         mask = _aplicar_filtros_df(df, filtros_uso, min_min_override)
         sub = df[mask].copy()
-        sub["_score"] = _calcular_score_contextual(sub, filtros_uso)
+        sub["_score"] = _calcular_score_contextual(sub, filtros_uso, ref_cluster=ref_cluster)
         return sub.sort_values("_score", ascending=False).head(limite)
 
     # ── Nivel 1: filtros completos ──────────────────────────────────────────

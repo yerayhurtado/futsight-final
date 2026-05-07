@@ -32,8 +32,8 @@ Asegúrate de tener instalado lo siguiente en tu sistema antes de iniciar:
 
 1. Clona el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/futsight.git
-   cd futsight
+   git clone https://github.com/tu-usuario/futsight-final.git
+   cd futsight-final
    ```
 
 2. Instala las dependencias del frontend:

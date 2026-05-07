@@ -30,4 +30,6 @@ model Player {
 
   // FBref advanced metrics stored as serialized JSON
   statsJson       String
+
+  @@index([season])
 }

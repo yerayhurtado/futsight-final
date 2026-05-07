@@ -34,9 +34,11 @@ export interface PlayerData {
  */
 // ... (mismos imports)
 
-export async function getPlayers(): Promise<PlayerData[]> {
+export async function getPlayers(filters?: { season?: string }): Promise<PlayerData[]> {
   try {
-    const players = await prisma.player.findMany();
+    const players = await prisma.player.findMany({
+      where: filters?.season ? { season: filters.season } : undefined
+    });
     
     return players.map(p => {
       const stats = JSON.parse(p.statsJson || '{}');
