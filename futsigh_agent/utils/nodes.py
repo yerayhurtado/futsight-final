@@ -421,22 +421,27 @@ Búsqueda actual del usuario: {query}
 
 # Prompt para el LLM: genera un informe de ojeador narrativo
 _EXPLAIN_PROMPT = ChatPromptTemplate.from_template("""
-Eres un Ojeador de Fútbol Profesional.
-Tu tarea es redactar un breve informe (máx 3 frases) resumiendo los resultados de búsqueda.
+Eres un Ojeador de Fútbol Profesional de alto nivel.
+Redacta exactamente 2-3 frases de análisis de mercado, específicas y concretas.
 
-DATOS:
-- Búsqueda: {query}
-- Jugadores encontrados: {num_players}
-- Criterios: {criterios}
+BÚSQUEDA DEL DIRECTOR DEPORTIVO: {query}
 
-INSTRUCCIONES:
-- Habla con tono experto y analítico.
-- Si hay muchos jugadores, destaca que hay buenas opciones en el mercado.
-- Si hay pocos, menciona que el perfil es muy específico.
-- No menciones nombres específicos de jugadores (eso va en las tarjetas).
-- Usa un lenguaje que inspire confianza al director deportivo.
+FILTROS TÉCNICOS APLICADOS: {criterios}
 
-Ejemplo: "Tras analizar el mercado, hemos identificado una selección sólida de laterales zurdos con proyección. Aunque el perfil es escaso en ligas top, las opciones encontradas presentan un equilibrio ideal entre valor y rendimiento defensivo."
+JUGADORES ENCONTRADOS: {num_players}
+
+DATA DE LOS MEJORES CANDIDATOS HALLADOS:
+{top_players_data}
+
+REGLAS ESTRICTAS:
+- Menciona datos concretos de los jugadores encontrados (medias de goles, asistencias, valor, edades, ligas).
+- Comenta si el mercado está saturado o es escaso para este perfil.
+- Si se pidió un perfil específico (extremo, cazagoles, pivote...) coméntalo con lenguaje técnico.
+- NO inventes datos que no estén en la data proporcionada.
+- Devuelve SOLO el texto del informe, sin prefijos ni comillas externas, en español.
+- Responde en formato JSON: {{"informe": "<tu texto aqui>"}}
+
+Ejemplo de tono: "El mercado ofrece {num_players} opciones viables. Los mejores perfiles oscilan entre los 22 y 26 años, con medias de 12 goles y valor de mercado entre 15M€ y 40M€. El perfil de extremo zurdo es escaso en la Premier pero abundante en Ligue 1."
 """)
 
 
@@ -1153,6 +1158,35 @@ def explain_node(state: AgentState) -> dict:
     else:
         orden = "Ordenados por rendimiento: goles, asistencias, xG y pases clave (media por 90 min)."
 
+    # ── Construir contexto de los top jugadores para el LLM ─────────────────
+    top_players_data = "Sin datos de jugadores disponibles."
+    df_global, _ = _get_df()
+    if df_global is not None and players:
+        try:
+            top_ids = [p["id"] for p in players[:5]]
+            df_top = df_global[df_global["PlayerID"].isin(top_ids)].copy()
+            lineas = []
+            for _, row in df_top.iterrows():
+                nombre = row.get("Player", "?")
+                club   = row.get("Squad", "?")
+                liga   = row.get("League", "?")
+                edad   = _safe_int(row.get("Age"))
+                gls    = _safe_int(row.get("Gls"), 0)
+                ast    = _safe_int(row.get("Ast"), 0)
+                won    = _safe_int(row.get("Won"), 0)
+                mins   = _safe_int(row.get("Min"), 0)
+                valor  = _safe_int(row.get("market_value_in_eur") or row.get("Valor_Mercado"))
+                perfil_j = row.get("Perfil_Principal") or row.get("Perfil_Historico") or ""
+                valor_str = f"{valor // 1_000_000}M€" if valor and valor >= 1_000_000 else (f"{valor // 1_000}K€" if valor else "N/D")
+                lineas.append(
+                    f"- {nombre} ({edad}a, {perfil_j}) | {club} - {liga} | "
+                    f"{gls}G {ast}A {won}Reg | {mins}min | Valor: {valor_str}"
+                )
+            if lineas:
+                top_players_data = "\n".join(lineas)
+        except Exception as e:
+            logger.warning("Error construyendo contexto de jugadores para explain: %s", e)
+
     # ── Generar explicación con LLM ──────────────────────────────────────────
     explicacion_final = f"Se encontraron {len(players)} jugadores que coinciden con tu búsqueda."
     if _llm and players:
@@ -1161,10 +1195,28 @@ def explain_node(state: AgentState) -> dict:
             res = chain.invoke({
                 "query": state.get("query", ""),
                 "num_players": len(players),
-                "criterios": criterios_str
+                "criterios": criterios_str,
+                "top_players_data": top_players_data,
             })
-            if res.content:
-                explicacion_final = res.content
+            raw_content = res.content or ""
+            # El LLM devuelve JSON: {"informe": "..."} — extraer el texto
+            try:
+                parsed = json.loads(raw_content)
+                # Buscar la clave del informe con tolerancia a mayúsculas/minúsculas
+                for key in ("informe", "Informe", "text", "explanation", "resultado"):
+                    if key in parsed and isinstance(parsed[key], str) and parsed[key].strip():
+                        explicacion_final = parsed[key].strip()
+                        break
+                else:
+                    # Si no hay clave conocida, tomar el primer valor string
+                    for v in parsed.values():
+                        if isinstance(v, str) and v.strip():
+                            explicacion_final = v.strip()
+                            break
+            except (json.JSONDecodeError, AttributeError):
+                # No es JSON: usarlo directamente si parece texto plano
+                if raw_content.strip() and not raw_content.strip().startswith('{'):
+                    explicacion_final = raw_content.strip()
         except Exception as e:
             logger.warning("Error generando explicación con LLM: %s", e)
 

@@ -7,6 +7,7 @@ import json
 import time
 import logging
 from collections import OrderedDict
+from typing import Generator
 from langgraph.graph import START, END, StateGraph
 from utils.state import AgentState
 from utils.nodes import analyzer_node, search_node, explain_node, format_node
@@ -72,6 +73,72 @@ def buscar_jugadores(query: str) -> dict:
         duration_ms = (time.perf_counter() - t0) * 1000
         logger.warning("search_end query=%s duration_ms=%.0f success=false error=%s", query[:80], duration_ms, e)
         raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Versión streaming: ejecuta nodo a nodo y emite eventos SSE
+# ─────────────────────────────────────────────────────────────────────────────
+
+_NODE_META = {
+    "analyzer": {"step": 0, "label": "Analizando consulta"},
+    "search":   {"step": 1, "label": "Buscando jugadores"},
+    "explain":  {"step": 2, "label": "Generando análisis"},
+    "format":   {"step": 3, "label": "Preparando resultados"},
+}
+
+
+def _sse_event(event_type: str, data: dict) -> str:
+    """Formatea un evento SSE."""
+    return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def buscar_jugadores_stream(query: str) -> Generator[str, None, None]:
+    """
+    Ejecuta el agente nodo a nodo y emite eventos SSE reales.
+    
+    Eventos emitidos:
+        node_start  - Cuando empieza un nodo {step, label}
+        node_end    - Cuando termina un nodo {step, label, duration_ms}
+        result      - Resultado final (mismo payload que /buscar)
+        error       - Si algo falla {message}
+    """
+    t0 = time.perf_counter()
+    state: dict = {"query": query}
+    
+    nodes = [
+        ("analyzer", analyzer_node),
+        ("search",   search_node),
+        ("explain",  explain_node),
+        ("format",   format_node),
+    ]
+    
+    try:
+        for name, node_fn in nodes:
+            meta = _NODE_META[name]
+            yield _sse_event("node_start", {"step": meta["step"], "label": meta["label"]})
+            
+            tn = time.perf_counter()
+            result = node_fn(state)
+            state.update(result)
+            node_ms = (time.perf_counter() - tn) * 1000
+            
+            yield _sse_event("node_end", {
+                "step": meta["step"],
+                "label": meta["label"],
+                "duration_ms": round(node_ms),
+            })
+        
+        # Parsear la respuesta final
+        response_json = state.get("response", "{}")
+        data = json.loads(response_json)
+        total_ms = (time.perf_counter() - t0) * 1000
+        data["total_duration_ms"] = round(total_ms)
+        
+        yield _sse_event("result", data)
+        
+    except Exception as e:
+        logger.exception("Error en buscar_jugadores_stream: %s", e)
+        yield _sse_event("error", {"message": str(e)})
 
 
 def main():

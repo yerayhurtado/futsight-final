@@ -29,6 +29,11 @@ export const metadata: Metadata = {
   description: "Descubre insights profundos de jugadores, análisis de partidos en tiempo real y estrategias tácticas con la plataforma de analytics más avanzada del fútbol profesional.",
   keywords: ["football analytics", "soccer statistics", "player analysis", "match analytics", "football data"],
   authors: [{ name: "FutSight Team" }],
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
   openGraph: {
     title: "FutSight - Advanced Football Analytics Platform",
     description: "La plataforma de analytics más avanzada del fútbol profesional",

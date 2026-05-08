@@ -22,6 +22,82 @@ const RECENT_KEY = 'agent_recent_queries';
 const SHORTLIST_KEY = 'agent_shortlist';
 const MAX_RECENT = 10;
 
+const AGENT_STEPS = [
+    { id: 0, label: 'Analizando consulta',       icon: '🧠', detail: 'El LLM extrae filtros del lenguaje natural' },
+    { id: 1, label: 'Buscando jugadores',         icon: '🔍', detail: 'Aplicando filtros sobre la base de datos' },
+    { id: 2, label: 'Generando análisis',         icon: '📋', detail: 'El ojeador redacta el informe de mercado' },
+    { id: 3, label: 'Preparando resultados',      icon: '✨', detail: 'Ordenando candidatos por relevancia' },
+];
+
+function AgentProgressBar({ step, nodePhase }: { step: number; nodePhase: 'start' | 'end' }) {
+    // Derivar progreso del step: eliminamos el estado separado que se desincronizaba
+    // node_start → mitad del step, node_end → final del step
+    const totalSteps = AGENT_STEPS.length;
+    const baseProgress = step >= totalSteps ? 100 : (step / totalSteps) * 100;
+    const halfStep = (1 / totalSteps) * 100;
+    const progress = step >= totalSteps
+        ? 100
+        : nodePhase === 'end'
+            ? baseProgress + halfStep  // step completado
+            : baseProgress + halfStep * 0.4; // a mitad del step
+
+    return (
+        <div className="max-w-4xl mx-auto mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="glass border border-sky-500/20 rounded-2xl p-5 shadow-2xl">
+                {/* Barra de progreso principal */}
+                <div className="mb-5">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-sky-400 uppercase tracking-widest">
+                            {AGENT_STEPS[step]?.label ?? 'Finalizando…'}
+                        </span>
+                        <span className="text-xs font-mono text-gray-500">{Math.round(progress)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(56,189,248,0.6)]"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                </div>
+
+                {/* Pasos */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {AGENT_STEPS.map((s) => {
+                        const isDone    = s.id < step || (s.id === step && nodePhase === 'end');
+                        const isCurrent = s.id === step && nodePhase === 'start';
+                        return (
+                            <div
+                                key={s.id}
+                                className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border transition-all duration-500 ${
+                                    isDone
+                                        ? 'border-emerald-500/40 bg-emerald-500/10'
+                                        : isCurrent
+                                        ? 'border-sky-500/50 bg-sky-500/10 shadow-[0_0_20px_rgba(56,189,248,0.15)]'
+                                        : 'border-white/[0.05] bg-white/[0.02] opacity-40'
+                                }`}
+                            >
+                                <span className={`text-xl transition-all duration-300 ${ isCurrent ? 'animate-bounce' : '' }`}>
+                                    {isDone ? '✅' : s.icon}
+                                </span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider text-center leading-tight ${
+                                    isDone ? 'text-emerald-400' : isCurrent ? 'text-sky-300' : 'text-gray-600'
+                                }`}>
+                                    {s.label}
+                                </span>
+                                {isCurrent && (
+                                    <span className="text-[9px] text-gray-500 text-center leading-tight hidden md:block">
+                                        {s.detail}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 type JugadorAgente = {
     PlayerID: number;
     Player?: string | null;
@@ -230,6 +306,8 @@ export default function AgentPage() {
     const [filtrosRelajados, setFiltrosRelajados] = useState('');
     const [error, setError] = useState('');
     const [busquedasSimilares, setBusquedasSimilares] = useState<string[]>([]);
+    const [agentStep, setAgentStep] = useState(0);
+    const [nodePhase, setNodePhase] = useState<'start' | 'end'>('start');
 
     const [recentQueries, setRecentQueries] = useState<string[]>([]);
     const [sortBy, setSortBy] = useState<SortKey>('relevancia');
@@ -275,25 +353,111 @@ export default function AgentPage() {
             setFiltrosRelajados('');
             setError('');
             setBusquedasSimilares([]);
+            setAgentStep(0);
+            setNodePhase('start');
+
             try {
-                const res = await fetch('/api/agent', {
+                const res = await fetch('/api/agent/stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: q }),
                 });
-                const data = await res.json();
-                setJugadores(Array.isArray(data.jugadores) ? data.jugadores : []);
-                setExplicacion(data.explicacion ?? '');
-                setBasadoEn(data.basado_en ?? '');
-                setRecomendacion(data.recomendacion ?? '');
-                setOrden(data.orden ?? '');
-                setFiltrosRelajados(data.filtros_relajados ?? '');
-                setError(data.error ?? '');
-                setBusquedasSimilares(Array.isArray(data.busquedas_similares) ? data.busquedas_similares : []);
-                saveRecent(q);
+
+                if (!res.ok || !res.body) {
+                    // Fallback: si el stream falla, usar el endpoint clásico
+                    const fallbackRes = await fetch('/api/agent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: q }),
+                    });
+                    const data = await fallbackRes.json();
+                    setAgentStep(AGENT_STEPS.length);
+                    setJugadores(Array.isArray(data.jugadores) ? data.jugadores : []);
+                    setExplicacion(data.explicacion ?? '');
+                    setBasadoEn(data.basado_en ?? '');
+                    setRecomendacion(data.recomendacion ?? '');
+                    setOrden(data.orden ?? '');
+                    setFiltrosRelajados(data.filtros_relajados ?? '');
+                    setError(data.error ?? '');
+                    setBusquedasSimilares(Array.isArray(data.busquedas_similares) ? data.busquedas_similares : []);
+                    saveRecent(q);
+                    setLoading(false);
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                // Procesar cada chunk, forzando un render entre eventos
+                const processEvents = async (text: string) => {
+                    const parts = text.split('\n\n');
+                    const remainder = parts.pop() || '';
+
+                    for (const part of parts) {
+                        if (!part.trim()) continue;
+
+                        const lines = part.split('\n');
+                        let eventType = '';
+                        let dataStr = '';
+                        for (const line of lines) {
+                            if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+                            if (line.startsWith('data: ')) dataStr = line.slice(6);
+                        }
+                        if (!eventType || !dataStr) continue;
+
+                        try {
+                            const payload = JSON.parse(dataStr);
+
+                            if (eventType === 'node_start') {
+                                setAgentStep(payload.step as number);
+                                setNodePhase('start');
+                            } else if (eventType === 'node_end') {
+                                setAgentStep(payload.step as number);
+                                setNodePhase('end');
+                            } else if (eventType === 'result') {
+                                setAgentStep(AGENT_STEPS.length);
+                                setNodePhase('end');
+                                setJugadores(Array.isArray(payload.jugadores) ? payload.jugadores : []);
+                                setExplicacion(payload.explicacion ?? '');
+                                setBasadoEn(payload.basado_en ?? '');
+                                setRecomendacion(payload.recomendacion ?? '');
+                                setOrden(payload.orden ?? '');
+                                setFiltrosRelajados(payload.filtros_relajados ?? '');
+                                setError(payload.error ?? '');
+                                setBusquedasSimilares(
+                                    Array.isArray(payload.busquedas_similares) ? payload.busquedas_similares : []
+                                );
+                                saveRecent(q);
+                            } else if (eventType === 'error') {
+                                setError(payload.message ?? 'Error desconocido del agente.');
+                                setAgentStep(AGENT_STEPS.length);
+                            }
+                        } catch {
+                            // Ignorar eventos mal formados
+                        }
+
+                        // Forzar un render entre eventos para que el UI se actualice
+                        await new Promise((r) => setTimeout(r, 50));
+                    }
+
+                    return remainder;
+                };
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    buffer = await processEvents(buffer);
+                }
+                // Procesar lo que quede en el buffer
+                if (buffer.trim()) {
+                    await processEvents(buffer + '\n\n');
+                }
             } catch {
                 setJugadores([]);
                 setError('Error de conexión. Comprueba que el agente esté en marcha.');
+                setAgentStep(AGENT_STEPS.length);
             } finally {
                 setLoading(false);
             }
@@ -472,6 +636,10 @@ export default function AgentPage() {
                 )}
 
                 <div className="max-w-7xl mx-auto space-y-8">
+                    {loading && (
+                        <AgentProgressBar step={agentStep} nodePhase={nodePhase} />
+                    )}
+
                     {filtrosRelajados && (
                         <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200">
                             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -486,25 +654,36 @@ export default function AgentPage() {
                                 <FileText className="w-5 h-5 text-sky-400" />
                                 Análisis del ojeador
                             </h2>
-                            <div className="space-y-4 text-sm text-gray-300">
-                                {basadoEn && (
-                                    <div>
-                                        <span className="text-gray-500 font-bold uppercase text-xs tracking-wider block mb-1">Criterios aplicados</span>
-                                        <p className="leading-relaxed">{basadoEn}</p>
+                            <div className="space-y-6 text-sm text-gray-300">
+                                {explicacion && (
+                                    <div className="relative">
+                                        <div className="absolute -left-4 top-0 bottom-0 w-1 bg-sky-500/40 rounded-full" />
+                                        <p className="text-lg md:text-xl font-medium text-white leading-relaxed italic">
+                                            "{explicacion}"
+                                        </p>
                                     </div>
                                 )}
-                                {recomendacion && (
-                                    <div>
-                                        <span className="text-gray-500 font-bold uppercase text-xs tracking-wider block mb-1">Recomendación</span>
-                                        <p className="leading-relaxed">{recomendacion}</p>
-                                    </div>
-                                )}
-                                {orden && (
-                                    <div>
-                                        <span className="text-gray-500 font-bold uppercase text-xs tracking-wider block mb-1">Orden</span>
-                                        <p className="leading-relaxed">{orden}</p>
-                                    </div>
-                                )}
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-white/[0.05]">
+                                    {basadoEn && (
+                                        <div>
+                                            <span className="text-gray-500 font-bold uppercase text-[10px] tracking-widest block mb-2">Criterios técnicos</span>
+                                            <p className="leading-relaxed text-gray-400">{basadoEn}</p>
+                                        </div>
+                                    )}
+                                    {recomendacion && (
+                                        <div>
+                                            <span className="text-gray-500 font-bold uppercase text-[10px] tracking-widest block mb-2">Consejo del ojeador</span>
+                                            <p className="leading-relaxed text-gray-400">{recomendacion}</p>
+                                        </div>
+                                    )}
+                                    {orden && (
+                                        <div>
+                                            <span className="text-gray-500 font-bold uppercase text-[10px] tracking-widest block mb-2">Prioridad de resultados</span>
+                                            <p className="leading-relaxed text-gray-400">{orden}</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}

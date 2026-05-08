@@ -35,11 +35,12 @@ from typing import Optional
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 # ── Importaciones del propio proyecto ────────────────────────────────────────
 # El módulo ahora se llama agent.py (no main.py)
-from agent import buscar_jugadores
+from agent import buscar_jugadores, buscar_jugadores_stream
 from utils.nodes import get_informe_jugador
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,29 @@ def buscar(body: BuscarRequest):
         orden=data.get("orden", ""),
         filtros_relajados=data.get("filtros_relajados", ""),
         error=data.get("error"),
+    )
+
+
+@app.post("/buscar-stream", tags=["Scouting"])
+def buscar_stream(body: BuscarRequest):
+    """
+    Versión streaming de /buscar. Emite eventos SSE en tiempo real
+    para cada nodo del pipeline del agente.
+
+    Eventos emitidos:
+        - node_start: {step, label}
+        - node_end:   {step, label, duration_ms}
+        - result:     payload final (mismo que /buscar)
+        - error:      {message}
+    """
+    return StreamingResponse(
+        buscar_jugadores_stream(body.query),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Evita buffering en nginx
+        },
     )
 
 
