@@ -44,6 +44,10 @@ def predict(player: str = Query(..., description="Nombre del jugador a predecir"
     """
     Predice el valor de mercado de un jugador dado su nombre.
     Ejemplo: GET /predict?player=Lamine+Yamal
+
+    La respuesta incluye campos numéricos habituales y explicación XAI generada en
+    `predict_player_value`: `explanation_details` (top impactos), `age_analysis`,
+    `league`, `league_coeff`.
     """
     if not player or len(player.strip()) < 2:
         raise HTTPException(status_code=400, detail="El nombre del jugador es demasiado corto.")

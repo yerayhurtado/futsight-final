@@ -1,14 +1,14 @@
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Fragment, type SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { 
-    User, Shield, Zap, Globe, ArrowLeft, TrendingUp, TrendingDown, Award, 
+import {
+    User, Shield, Zap, Globe, ArrowLeft, TrendingUp, TrendingDown, Award,
     Target, MapPin, ChevronRight, Cake, Loader2,
     Activity, Dna, Clock, Timer, Percent, LineChart, Ruler, Footprints,
-    ExternalLink
+    ExternalLink, HelpCircle,
 } from 'lucide-react';
 import { PlayerData } from '@/lib/getPlayers';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -50,6 +50,29 @@ const EFFICIENCY_MAP: Record<string, { key: string; label: string; max: number; 
     gk: [
         { key: 'Cmp%', label: 'Precisión de pase', max: 100, description: 'Porcentaje de pases completados con los pies. Cada vez más relevante en porteros modernos.' },
     ],
+};
+
+/** XAI cuando el modelo predice por debajo del valor de mercado */
+type XaiDownTrendPayload = {
+    impact_lines: string[];
+    factor_edad_line: string;
+    coef_liga_line: string;
+    conclusion: string;
+    highlight_box: string;
+};
+
+const XAI_DOWN_TREND_HELP =
+    '¿Por qué baja el valor si el jugador es muy bueno? Muy sencillo: Es como una acción de bolsa que ha subido mucho por la ilusión de la gente (Hype). El modelo analiza los datos fríos (Goles y minutos) y dice: «El jugador es crack, pero su precio actual en el mercado es tan alto que, para mantenerlo o subir más, necesitaría cifras de Balón de Oro inmediatas». Es una predicción de ajuste de realidad, no una crítica al talento.';
+
+/** Respuesta de /api/predict con campos XAI opcionales */
+type PredictionWithXai = {
+    predicted_value?: number;
+    diff_pct?: number;
+    explanation_details?: { mensaje: string }[];
+    age_analysis?: string;
+    league?: string;
+    league_coeff?: number;
+    xai_down_trend?: XaiDownTrendPayload | null;
 };
 
 const KEY_METRICS_BY_POSITION: Record<string, { key: string; label: string; suffix?: string }[]> = {
@@ -142,7 +165,8 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
     const [predictedValue, setPredictedValue] = useState<number | null>(null);
     const [predictedDiff, setPredictedDiff] = useState<number | null>(null);
     const [predictedLoading, setPredictedLoading] = useState(false);
-    const [similarPlayers, setSimilarPlayers] = useState<any[]>([]);
+    const [predictionData, setPredictionData] = useState<PredictionWithXai | null>(null);
+    const [similarPlayers, setSimilarPlayers] = useState<PlayerData[]>([]);
     const [similarLoading, setSimilarLoading] = useState(false);
 
     useEffect(() => {
@@ -152,7 +176,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                 const allPlayers: PlayerData[] = await response.json();
                 const found = allPlayers.find(p => String(p.PlayerID) === String(playerIdFromUrl));
                 setPlayer(found || null);
-            } catch (error) { console.error(error); } 
+            } catch (error) { console.error(error); }
             finally { setLoading(false); }
         }
         loadPlayer();
@@ -174,12 +198,14 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
     useEffect(() => {
         if (!player?.Player) return;
         setPredictedLoading(true);
+        setPredictionData(null);
         async function fetchPrediction() {
             try {
                 const res = await fetch(`/api/predict?player=${encodeURIComponent(player!.Player)}`);
                 if (!res.ok) return;
                 const data = await res.json();
                 if (data?.predicted_value) {
+                    setPredictionData(data as PredictionWithXai);
                     setPredictedValue(data.predicted_value);
                     setPredictedDiff(data.diff_pct ?? null);
                 }
@@ -224,7 +250,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
         <section className="relative min-h-screen bg-[#020812] overflow-hidden font-sans text-white p-6">
             <div className="absolute inset-0 pointer-events-none">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_40%_at_50%_0%,rgba(16,185,129,0.07),transparent)]" />
-                <div className="absolute inset-0 opacity-[0.03]" style={{backgroundImage:'linear-gradient(rgba(16,185,129,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(16,185,129,0.8) 1px,transparent 1px)',backgroundSize:'40px 40px'}} />
+                <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(rgba(16,185,129,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(16,185,129,0.8) 1px,transparent 1px)', backgroundSize: '40px 40px' }} />
             </div>
 
             <div className="relative z-10 pt-24 pb-20 max-w-7xl mx-auto space-y-10">
@@ -239,7 +265,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 {/* TARJETA PRINCIPAL CON IMAGEN REAL */}
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6 }}
@@ -247,18 +273,18 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                 >
                     <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none" />
                     <div className="grid md:grid-cols-3 gap-12 p-12 items-center relative z-10">
-                        
+
                         {/* CONTENEDOR DE LA IMAGEN */}
                         <div className="flex flex-col items-center justify-center">
                             <div className="relative group">
                                 <div className="absolute inset-0 rounded-full bg-emerald-500/20 blur-3xl group-hover:bg-emerald-500/30 transition-all duration-700" />
                                 <div className="relative w-64 h-64 rounded-full bg-gradient-to-b from-[#0a1628] to-[#020812] flex items-end justify-center border-4 border-white/[0.05] overflow-hidden shadow-2xl">
                                     {player.strCutout ? (
-                                        <img 
-                                            src={player.strCutout} 
+                                        <img
+                                            src={player.strCutout}
                                             alt={player.Player}
                                             className="h-[90%] w-auto object-contain z-10 drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)] transform group-hover:scale-110 transition-transform duration-500"
-                                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://www.thesportsdb.com/images/media/player/cutout/default.png'; }}
+                                            onError={(e: SyntheticEvent<HTMLImageElement>) => { e.currentTarget.src = 'https://www.thesportsdb.com/images/media/player/cutout/default.png'; }}
                                         />
                                     ) : (
                                         <User className="w-36 h-36 text-white/5 mb-10" />
@@ -296,7 +322,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                 </motion.div>
 
                 {/* Tarjetas base: Partidos, Titularidades, Minutos, Min/Partido */}
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.2 }}
@@ -318,7 +344,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                             <Target className="w-5 h-5 text-green-400" />
                             Métricas clave para {player.Pos_Main.toUpperCase()}
                         </h2>
-                        <motion.div 
+                        <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.5, delay: 0.3 }}
@@ -336,7 +362,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                     </div>
                 )}
 
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.4 }}
@@ -352,14 +378,15 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                         </p>
                         <div className="space-y-8 relative z-10">
                             {efficiencyStats.map((stat) => (
-                                <ProgressBar
-                                    key={stat.key}
-                                    label={stat.label}
-                                    value={(player as any)[stat.key] ?? 0}
-                                    max={stat.max}
-                                    color="from-green-500 to-emerald-400"
-                                    description={'description' in stat ? stat.description : undefined}
-                                />
+                                <Fragment key={stat.key}>
+                                    <ProgressBar
+                                        label={stat.label}
+                                        value={(player as any)[stat.key] ?? 0}
+                                        max={stat.max}
+                                        color="from-green-500 to-emerald-400"
+                                        description={'description' in stat ? stat.description : undefined}
+                                    />
+                                </Fragment>
                             ))}
                         </div>
                     </div>
@@ -375,7 +402,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                                     Mide la influencia real del jugador en el rendimiento del equipo. Un valor positivo indica que el equipo es mejor con él en el campo.
                                 </p>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="glass-dark p-5 rounded-2xl border border-white/5 relative overflow-hidden group hover:border-purple-500/30 transition-all">
                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Dif. Goles / 90</p>
@@ -429,6 +456,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                     predictedValue={predictedValue}
                     predictedDiff={predictedDiff}
                     predictedLoading={predictedLoading}
+                    explanationData={predictionData}
                 />
 
                 {/* Sección de Jugadores Similares */}
@@ -438,13 +466,13 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                             <Dna className="w-5 h-5 text-blue-400 animate-pulse" /> Perfiles Similares
                         </h2>
                         <div className="flex items-center gap-2">
-                             <div className="h-[1px] w-12 bg-gradient-to-r from-transparent to-blue-500/30" />
-                             <span className="text-[10px] font-bold text-blue-400/80 uppercase tracking-[0.2em] bg-blue-500/5 px-3 py-1 rounded-full border border-blue-500/10">
+                            <div className="h-[1px] w-12 bg-gradient-to-r from-transparent to-blue-500/30" />
+                            <span className="text-[10px] font-bold text-blue-400/80 uppercase tracking-[0.2em] bg-blue-500/5 px-3 py-1 rounded-full border border-blue-500/10">
                                 ADN Estadístico
                             </span>
                         </div>
                     </div>
-                    
+
                     {similarLoading ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                             {[1, 2, 3, 4, 5].map(i => (
@@ -463,24 +491,24 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                                             animate={{ opacity: 1, scale: 1, y: 0 }}
                                             transition={{ duration: 0.4, delay: i * 0.1 }}
                                         >
-                                            <Link 
+                                            <Link
                                                 href={`/scouting/${sim.PlayerID}`}
                                                 className="group block relative glass-dark border border-white/10 rounded-[2rem] p-6 hover:border-blue-500/40 transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(59,130,246,0.15)] overflow-hidden"
                                             >
                                                 {/* Efecto de resplandor interno */}
                                                 <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[60px] rounded-full group-hover:bg-blue-500/20 transition-all duration-700" />
-                                                
+
                                                 <div className="flex flex-col items-center text-center relative z-10">
                                                     {/* Foto con anillo de similitud */}
                                                     <div className="relative mb-5">
                                                         <svg className="w-24 h-24 transform -rotate-90">
                                                             <circle cx="48" cy="48" r="45" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
-                                                            <circle 
-                                                                cx="48" cy="48" r="45" fill="none" 
-                                                                stroke="url(#blueGradient)" 
-                                                                strokeWidth="3" 
-                                                                strokeDasharray={2 * Math.PI * 45} 
-                                                                strokeDashoffset={2 * Math.PI * 45 * (1 - sim.Similarity/100)} 
+                                                            <circle
+                                                                cx="48" cy="48" r="45" fill="none"
+                                                                stroke="url(#blueGradient)"
+                                                                strokeWidth="3"
+                                                                strokeDasharray={2 * Math.PI * 45}
+                                                                strokeDashoffset={2 * Math.PI * 45 * (1 - sim.Similarity / 100)}
                                                                 strokeLinecap="round"
                                                                 className="transition-all duration-1000 ease-out"
                                                             />
@@ -523,10 +551,10 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ id: str
                                                         </div>
                                                         <div className="flex items-center gap-3">
                                                             <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                                                                <motion.div 
+                                                                <motion.div
                                                                     initial={{ width: 0 }}
                                                                     animate={{ width: `${sim.Similarity}%` }}
-                                                                    className="h-full bg-gradient-to-r from-blue-600 to-cyan-400" 
+                                                                    className="h-full bg-gradient-to-r from-blue-600 to-cyan-400"
                                                                 />
                                                             </div>
                                                             <ExternalLink className="w-3 h-3 text-white/20 group-hover:text-blue-400 transition-colors" />
@@ -583,12 +611,14 @@ function ValorPorTemporadaChart({
     predictedValue,
     predictedDiff,
     predictedLoading,
+    explanationData,
 }: {
     seasons: { Season: string; Valor_Mercado: number | null }[];
     currentValue: number | null;
     predictedValue?: number | null;
     predictedDiff?: number | null;
     predictedLoading?: boolean;
+    explanationData?: PredictionWithXai | null;
 }) {
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
@@ -632,7 +662,7 @@ function ValorPorTemporadaChart({
     // ── SKELETON: mostrar mientras el modelo está cargando ──────────────────
     if (predictedLoading) {
         return (
-            <motion.div 
+            <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.5 }}
@@ -733,7 +763,7 @@ function ValorPorTemporadaChart({
 
     if (validSeasons.length === 0 && !currentValue) {
         return (
-            <motion.div 
+            <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.5 }}
@@ -749,7 +779,7 @@ function ValorPorTemporadaChart({
 
 
     return (
-        <motion.div 
+        <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
@@ -762,11 +792,10 @@ function ValorPorTemporadaChart({
                         <LineChart className="w-5 h-5 text-green-400" /> Valor por temporada y predicción
                     </h2>
                     {!predictedLoading && isRealPrediction && predictedDiff !== null && (
-                        <span className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-black uppercase tracking-wider ${
-                            diffSign
+                        <span className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-black uppercase tracking-wider ${diffSign
                                 ? 'bg-green-500/15 border-green-500/40 text-green-400'
                                 : 'bg-red-500/15 border-red-500/40 text-red-400'
-                        }`}>
+                            }`}>
                             {diffSign
                                 ? <TrendingUp className="w-4 h-4" />
                                 : <TrendingDown className="w-4 h-4" />}
@@ -878,10 +907,144 @@ function ValorPorTemporadaChart({
                         <span className="text-xs text-gray-600">Modelo: pesos por posición + curva de edad</span>
                     )}
                 </div>
+                {/* --- JUSTIFICACIÓN DEL MODELO (XAI) --- */}
+                {explanationData?.xai_down_trend && (
+                    <div className="mt-8 pt-6 border-t border-white/10 space-y-5">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <Target className="w-4 h-4 text-blue-400 shrink-0" />
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
+                                Justificación del Modelo
+                            </h4>
+                            <div className="group relative inline-flex items-center focus-within:outline-none">
+                                <button
+                                    type="button"
+                                    className="rounded-full p-0.5 text-gray-500 hover:text-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                                    aria-label="Ayuda: por qué puede bajar el valor predicho"
+                                >
+                                    <HelpCircle className="w-4 h-4 cursor-help" />
+                                </button>
+                                <div
+                                    className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-2 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900/98 p-3 text-left text-[11px] leading-relaxed text-gray-300 opacity-0 shadow-xl ring-1 ring-white/5 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 md:left-0 md:translate-x-0"
+                                    role="tooltip"
+                                >
+                                    {XAI_DOWN_TREND_HELP}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
+                            <div className="space-y-3">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">Desglose de impactos</p>
+                                <ul className="space-y-2.5">
+                                    {explanationData.xai_down_trend.impact_lines.map((line, idx) => (
+                                        <li key={idx} className="flex gap-2.5 text-[12px] leading-snug text-gray-300">
+                                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.45)]" />
+                                            <span>{line}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <div className="space-y-1.5 border-t border-white/5 pt-3 text-[11px] text-gray-500">
+                                    <p className="tabular-nums text-gray-400">{explanationData.xai_down_trend.factor_edad_line}</p>
+                                    <p className="tabular-nums text-gray-400">{explanationData.xai_down_trend.coef_liga_line}</p>
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-blue-500/25 bg-gradient-to-br from-blue-500/10 via-slate-900/40 to-slate-900/80 p-5 shadow-[0_0_40px_rgba(59,130,246,0.08)]">
+                                <p className="text-[12px] font-medium leading-relaxed text-gray-100">
+                                    {explanationData.xai_down_trend.highlight_box}
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-[12px] italic leading-relaxed text-gray-400">
+                            {explanationData.xai_down_trend.conclusion}
+                        </p>
+
+                        <p className="text-center text-[11px] text-gray-500">
+                            Nivel de liga detectado:{' '}
+                            <span className="font-bold uppercase text-gray-300">{explanationData.league ?? '—'}</span>
+                            {' '}(x{explanationData.league_coeff ?? '1'})
+                        </p>
+                    </div>
+                )}
+                {!explanationData?.xai_down_trend && explanationData?.explanation_details && explanationData.explanation_details.length > 0 && (
+                    <div className="mt-8 pt-6 border-t border-white/10 space-y-4">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <Target className="w-4 h-4 text-blue-400" />
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
+                                Justificación del Modelo
+                            </h4>
+                            {(predictedDiff ?? 0) < 0 && (
+                                <div className="group relative inline-flex items-center focus-within:outline-none">
+                                    <button
+                                        type="button"
+                                        className="rounded-full p-0.5 text-gray-500 hover:text-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                                        aria-label="Ayuda: por qué puede bajar el valor predicho"
+                                    >
+                                        <HelpCircle className="w-4 h-4 cursor-help" />
+                                    </button>
+                                    <div
+                                        className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-2 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900/98 p-3 text-left text-[11px] leading-relaxed text-gray-300 opacity-0 shadow-xl ring-1 ring-white/5 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 md:left-0 md:translate-x-0"
+                                        role="tooltip"
+                                    >
+                                        {XAI_DOWN_TREND_HELP}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                                {explanationData.explanation_details.map((item, idx) => (
+                                    <div key={idx} className="flex gap-3 items-start group mb-2">
+                                        <div className="mt-1.5 w-1 h-1 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                                        <p className="text-[12px] text-gray-400 leading-relaxed italic group-hover:text-gray-200 transition-colors">
+                                            {item.mensaje}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                                <p className="text-[12px] text-emerald-400 font-medium mb-2">
+                                    {explanationData.age_analysis}
+                                </p>
+                                <p className="text-[11px] text-gray-500 leading-tight text-center md:text-left">
+                                    Nivel de liga detectado: <span className="text-gray-300 uppercase font-bold">{explanationData.league}</span> (x{explanationData.league_coeff})
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </motion.div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // --- SUBCOMPONENTES ---
 function InfoItem({ Icon, label, value }: { Icon: any, label: string, value: any }) {
