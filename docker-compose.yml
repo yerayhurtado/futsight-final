@@ -10,6 +10,7 @@ services:
       - AGENT_API_URL=http://agent:8000
       - PREDICTION_API_URL=http://prediction:8001
       - RECOMMENDER_API_URL=http://recommender:8002
+      - CLUSTERING_API_URL=http://clustering:8003
     command: npm run dev
     volumes:
       - ./futsight-web:/app
@@ -20,6 +21,7 @@ services:
       - agent
       - prediction
       - recommender
+      - clustering
 
   agent:
     build:
@@ -31,6 +33,7 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=qwen2.5:7b
       - PYTHONUNBUFFERED=1
+      - CLUSTERING_API_URL=http://clustering:8003
     command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./futsigh_agent:/app
@@ -58,6 +61,18 @@ services:
       - "8002:8002"
     volumes:
       - ./recommender-service:/app
+      - ./dev.db:/app/dev.db
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  clustering:
+    build:
+      context: ./clustering-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./clustering-service:/app
       - ./dev.db:/app/dev.db
     environment:
       - PYTHONUNBUFFERED=1

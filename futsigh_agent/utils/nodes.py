@@ -37,6 +37,8 @@ import logging
 import os
 import re
 import time
+import urllib.request
+import urllib.error
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -132,6 +134,29 @@ _COLS_NUMERICAS = [
 _COLS_RENDIMIENTO = ["Gls", "Ast", "Won", "Min", "xG", "npxG", "KP", "SoT", "90s", "Tkl", "Int"]
 
 
+def _league_exigencia_coeff(league: object) -> float:
+    """Retorna el coeficiente de peso según el nivel de la liga."""
+    if league is None or (isinstance(league, float) and pd.isna(league)):
+        return 1.0
+    L = str(league).strip().lower()
+    if not L:
+        return 1.0
+    rules: list[tuple[tuple[str, ...], float]] = (
+        (("premier league", "premier"), 1.16),
+        (("la liga", "laliga", "primera división", "primera division"), 1.14),
+        (("serie a",), 1.12),
+        (("bundesliga",), 1.12),
+        (("ligue 1", "ligue1"), 1.10),
+        (("primeira liga", "liga portugal", "eredivisie", "belgian", "scottish"), 1.06),
+        (("championship", "segunda división", "segunda division", "2. bundesliga", "serie b"), 0.90),
+        (("segunda", "second division", "league one", "league two"), 0.88),
+    )
+    for keys, coeff in rules:
+        if any(k in L for k in keys):
+            return round(coeff, 2)
+    return 1.0
+
+
  # ─────────────────────────────────────────────────────────────────────────────
  # Inicialización del LLM (Ollama)
  # ─────────────────────────────────────────────────────────────────────────────
@@ -161,6 +186,38 @@ def _init_llm():
 
 
 _llm = _init_llm()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache del Clustering Service (perfiles GMM dinámicos)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_clustering_cache: dict[int, dict] | None = None
+_clustering_cache_time: float = 0.0
+_CLUSTERING_CACHE_TTL = 300  # 5 minutos
+
+
+def _fetch_clustering_data() -> dict[int, dict]:
+    """Obtiene clasificaciones GMM del clustering-service (con cache de 5 min)."""
+    global _clustering_cache, _clustering_cache_time
+    now = time.time()
+    if _clustering_cache is not None and (now - _clustering_cache_time) < _CLUSTERING_CACHE_TTL:
+        return _clustering_cache
+
+    url = os.environ.get("CLUSTERING_API_URL", "http://localhost:8003")
+    try:
+        req = urllib.request.Request(f"{url}/classify/all")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            raw = data.get("classifications", {})
+            # Las claves vienen como strings del JSON, convertir a int
+            _clustering_cache = {int(k): v for k, v in raw.items()}
+            _clustering_cache_time = now
+            logger.info("[clustering] Cache actualizado: %d jugadores", len(_clustering_cache))
+            return _clustering_cache
+    except Exception as e:
+        logger.warning("[clustering] Servicio no disponible: %s", e)
+        return _clustering_cache or {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -221,9 +278,6 @@ def _procesar_df_raw(df_raw: pd.DataFrame) -> pd.DataFrame:
         'playerID': 'PlayerID', 'player': 'Player', 'squad': 'Squad', 'league': 'League',
         'nation': 'Nation', 'pos_main': 'Pos_Main', 'age': 'Age', 'season': 'Season',
         'marketValue': 'Valor_Mercado', 'altura': 'Altura', 'strCutout': 'strCutout',
-        'clusterId': 'Cluster_ID', 'puresaPerfil': 'Puresa_Perfil', 'esHibrid': 'Es_Hibrid',
-        'perfilNom': 'Perfil_Nom', 'perfilPrincipal': 'Perfil_Principal', 
-        'perfilSecundari': 'Perfil_Secundari', 'perfilHistorico': 'Perfil_Historico',
         'piernaBuena': 'Pierna_Buena'
     }
     df_base = df_base.rename(columns=rename_map)
@@ -250,11 +304,37 @@ def _procesar_df_raw(df_raw: pd.DataFrame) -> pd.DataFrame:
         ultima_temporada_global = df["Season"].dropna().max()
         df_reciente["is_active_latest"] = df_reciente["Season"] == ultima_temporada_global
         min_col = df_reciente["Min"].replace(0, 1)
+        
+        # Aplicar coeficiente de exigencia de liga
+        league_coeffs = df_reciente["League"].apply(_league_exigencia_coeff)
+        
         for col in cols_rend:
-            df_reciente[f"{col}_90"] = (df_reciente[col] / min_col) * 90
+            # Calculamos per-90 y multiplicamos por el factor de liga
+            df_reciente[f"{col}_90"] = (df_reciente[col] / min_col) * 90 * league_coeffs
         df_reciente["Min_Weighted"] = df_reciente["Min"]
 
     df_reciente["valor_trend"] = df_reciente["PlayerID"].map(trend_map).fillna("stable")
+
+    # Enriquecer con perfiles GMM del clustering-service
+    try:
+        cls_data = _fetch_clustering_data()
+        if cls_data:
+            for col, key in [
+                ("Cluster_ID", "cluster_id"),
+                ("Puresa_Perfil", "cluster_prob"),
+                ("Es_Hibrid", "is_hybrid"),
+                ("Perfil_Nom", "perfil_principal"),
+                ("Perfil_Principal", "perfil_principal"),
+                ("Perfil_Secundari", "perfil_secundari"),
+                ("Perfil_Historico", "perfil_historico"),
+            ]:
+                df_reciente[col] = df_reciente["PlayerID"].map(
+                    lambda pid, k=key: cls_data.get(pid, {}).get(k)
+                )
+            logger.info("[clustering] DataFrame enriquecido con %d perfiles GMM", len(cls_data))
+    except Exception as e:
+        logger.warning("[clustering] No se pudieron cargar perfiles: %s", e)
+
     return df_reciente
 
 
@@ -389,17 +469,18 @@ LIGA (campo 'league'):
   "la liga" | "premier league" | "bundesliga" | "serie a" | "ligue 1"
 
 CONVERSIONES DE LENGUAJE NATURAL:
-  - joven → max_age: 23
-  - goleador / muchos goles → min_goals: 8
-  - asistencias / creador → min_assists: 5
-  - regate / regatista → min_dribbles: 20
-  - titular / muchos minutos → min_minutes: 900
+  - joven / promesa / talento → max_age: 21
+  - sub-23 / joven jugador → max_age: 23
+  - goleador / muchos goles → min_goals: 10
+  - asistencias / creador → min_assists: 6
+  - regate / regatista / 1vs1 → min_dribbles: 25
+  - titular / muchos minutos / habitual → min_minutes: 1200
   - zurdo → foot: "left" | diestro → foot: "right" | ambidiestro → foot: "both"
-  - alto / más de Xcm → min_height: X
-  - bajo / menos de Xcm → max_height: X
-  - barato / menos de X€ → max_market_value: X
-  - caro / más de X€ → min_market_value: X
-  - revaloriza / en alza → value_trend: "up"
+  - alto / corpulento / juego aéreo → min_height: 188
+  - bajo / menudo / ratonero → max_height: 172
+  - barato / asequible / ganga → max_market_value: 15000000
+  - caro / estrella / top → min_market_value: 40000000
+  - revaloriza / en alza / futuro → value_trend: "up"
 
 Devuelve SOLO este JSON (sin texto adicional, sin markdown):
 {{
@@ -600,11 +681,11 @@ def _aplicar_correcciones_postllm(filtros: dict, query: str) -> dict:
 
     # ── Inferir filtros de rendimiento desde palabras clave ─────────────────
     if any(t in q for t in ("gol", "goles", "goleador")) and not filtros.get("min_goals"):
-        filtros["min_goals"] = 8
+        filtros["min_goals"] = 10
     if any(t in q for t in ("asistencia", "asistencias", "creador")) and not filtros.get("min_assists"):
-        filtros["min_assists"] = 5
-    if any(t in q for t in ("regate", "regates", "regatista")) and not filtros.get("min_dribbles"):
-        filtros["min_dribbles"] = 20
+        filtros["min_assists"] = 6
+    if any(t in q for t in ("regate", "regates", "regatista", "1vs1")) and not filtros.get("min_dribbles"):
+        filtros["min_dribbles"] = 25
 
     # ── Pierna (desde palabras clave si el LLM no la puso) ──────────────────
     if not filtros.get("foot"):
@@ -623,8 +704,8 @@ def _aplicar_correcciones_postllm(filtros: dict, query: str) -> dict:
             filtros["value_trend"] = "down"
 
     # ── Titular → subir mínimo de minutos ───────────────────────────────────
-    if any(t in q for t in ("titular", "titulares", "muchos minutos")):
-        filtros["min_minutes"] = 900
+    if any(t in q for t in ("titular", "titulares", "muchos minutos", "habitual")):
+        filtros["min_minutes"] = 1200
 
     # ── Clamp del límite ────────────────────────────────────────────────────
     filtros["limit"] = max(5, min(MAX_RESULTADOS, _safe_int(filtros.get("limit"), MAX_RESULTADOS)))
@@ -814,19 +895,19 @@ def _calcular_score_contextual(df_subset: pd.DataFrame, filtros: dict, ref_clust
 
     # Ajustar pesos según criterio dominante de la búsqueda
     if filtros.get("min_goals"):
-        wg, wa, ww, wt, wi = 8.0, 1.0, 0.5, 0.2, 0.1
+        wg, wa, ww, wt, wi = 10.0, 1.2, 0.4, 0.2, 0.1
     elif filtros.get("min_assists"):
-        wg, wa, ww, wt, wi = 1.0, 8.0, 0.5, 0.2, 0.1
+        wg, wa, ww, wt, wi = 1.5, 10.0, 0.8, 0.2, 0.1
     elif filtros.get("min_dribbles"):
-        wg, wa, ww, wt, wi = 1.0, 0.5, 8.0, 0.2, 0.1
+        wg, wa, ww, wt, wi = 1.5, 0.8, 10.0, 0.2, 0.1
     elif filtros.get("min_tkl") or filtros.get("min_int"):
-        wg, wa, ww, wt, wi = 0.5, 0.3, 0.2, 5.0, 4.0
+        wg, wa, ww, wt, wi = 0.4, 0.2, 0.2, 7.0, 6.0
 
     score = (
         g * wg + a * wa + w * ww
-        + xg * 0.5 + kp * 0.3
+        + xg * 1.5 + kp * 0.8
         + tkl * wt + int_ * wi
-        + sca * 0.2 + (pp + pr) * 0.15
+        + sca * 1.2 + (pp + pr) * 0.5
     )
 
     # BOOST POR CLUSTER DE REFERENCIA (SIMILITUD ESTADÍSTICA)

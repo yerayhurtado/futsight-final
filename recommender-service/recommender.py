@@ -25,7 +25,8 @@ warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 # ============================================================
 
 # Minutos minimos para que un jugador entre en el calculo
-MIN_MINUTES = 500
+MIN_MINUTES = 900
+SIMILARITY_THRESHOLD = 0.7
 
 # Columnas brutas (conteos) que se normalizan a per-90
 COLS_TO_PER90 = [
@@ -143,25 +144,52 @@ def _normalize_position(pos_raw) -> str:
     return "mf"
 
 
+def _league_exigencia_coeff(league: object) -> float:
+    """Retorna el coeficiente de peso según el nivel de la liga."""
+    if league is None or (isinstance(league, float) and pd.isna(league)):
+        return 1.0
+    L = str(league).strip().lower()
+    if not L:
+        return 1.0
+    rules: list[tuple[tuple[str, ...], float]] = (
+        (("premier league", "premier"), 1.16),
+        (("la liga", "laliga", "primera división", "primera division"), 1.14),
+        (("serie a",), 1.12),
+        (("bundesliga",), 1.12),
+        (("ligue 1", "ligue1"), 1.10),
+        (("primeira liga", "liga portugal", "eredivisie", "belgian", "scottish"), 1.06),
+        (("championship", "segunda división", "segunda division", "2. bundesliga", "serie b"), 0.90),
+        (("segunda", "second division", "league one", "league two"), 0.88),
+    )
+    for keys, coeff in rules:
+        if any(k in L for k in keys):
+            return round(coeff, 2)
+    return 1.0
+
+
 # ============================================================
 # INGENIERIA DE METRICAS
 # ============================================================
 
 def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcula metricas per-90 y ratios derivados necesarios para el modelo.
+    Calcula metricas per-90, aplica peso por liga y ratios derivados necesarios para el modelo.
     """
     out = df.copy()
 
     # Factor per-90 basado en la columna '90s' de FBref
     factor_90 = _safe_div(1.0, out["90s"])
 
+    # Calcular coeficientes de liga para cada fila
+    league_coeffs = out["league"].apply(_league_exigencia_coeff) if "league" in out.columns else 1.0
+
     # --- Metricas per-90 ---
     for col in COLS_TO_PER90:
         if col in out.columns:
             col_name = f"{col}_p90"
             if col_name not in out.columns:  # evitar duplicados
-                out[col_name] = np.round(out[col] * factor_90, 4)
+                # Aplicamos el factor per-90 y el coeficiente de exigencia de liga
+                out[col_name] = np.round(out[col] * factor_90 * league_coeffs, 4)
 
     # --- Ratios derivados adicionales ---
     # Creacion
@@ -263,25 +291,21 @@ class PlayerRecommender:
             print("[recommender] ERROR: No hay datos disponibles.")
             return
 
-        # Filtrar por temporada mas reciente
-        latest = raw["Season"].max()
-        print(f"[recommender] Temporada: {latest}")
-        df = raw[raw["Season"] == latest].copy()
+        # En lugar de usar solo la temporada global más reciente (que puede estar incompleta),
+        # buscamos para cada jugador su temporada más reciente donde tenga >= MIN_MINUTES.
+        if "Min" in raw.columns:
+            valid_rows = raw[raw["Min"] >= MIN_MINUTES].copy()
+            if valid_rows.empty:
+                valid_rows = raw.copy()
+        else:
+            valid_rows = raw.copy()
 
-        # --- DEDUPLICACION ---
-        # Hay jugadores con multiples filas (distintas ligas, traspasos, etc.)
-        # Nos quedamos con la fila que tiene mas minutos jugados.
-        before_dedup = len(df)
-        df = df.sort_values("Min", ascending=False)
+        before_dedup = len(raw["PlayerID"].unique())
+        df = valid_rows.sort_values(["Season", "Min"], ascending=[False, False])
         df = df.drop_duplicates(subset="PlayerID", keep="first")
         after_dedup = len(df)
-        if before_dedup != after_dedup:
-            print(f"[recommender] Deduplicados: {before_dedup} -> {after_dedup} jugadores unicos")
-
-        # Filtro minimo de minutos
-        if "Min" in df.columns:
-            df = df[df["Min"] >= MIN_MINUTES].copy()
-            print(f"[recommender] Jugadores con >={MIN_MINUTES} min: {len(df)}")
+        
+        print(f"[recommender] Jugadores con >={MIN_MINUTES} min: {after_dedup} (de {before_dedup} totales)")
 
         # Normalizar posicion
         df["_pos"] = df["Pos"].apply(_normalize_position)

@@ -269,13 +269,6 @@ def load_data() -> pd.DataFrame:
             'age': 'Age',
             'season': 'Season',
             'marketValue': 'Valor_Mercado',
-            'clusterId': 'Cluster_ID',
-            'puresaPerfil': 'Puresa_Perfil',
-            'esHibrid': 'Es_Hibrid',
-            'perfilNom': 'Perfil_Nom',
-            'perfilPrincipal': 'Perfil_Principal',
-            'perfilSecundari': 'Perfil_Secundari',
-            'perfilHistorico': 'Perfil_Historico',
             'strCutout': 'strCutout',
             'piernaBuena': 'Pierna_Buena',
             'altura': 'Altura'

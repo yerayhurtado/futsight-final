@@ -17,13 +17,6 @@ model Player {
   age             Int?
   season          String?
   marketValue     Float?
-  clusterId       Int?
-  puresaPerfil    Float?
-  esHibrid        String?
-  perfilNom       String?
-  perfilPrincipal String?
-  perfilSecundari String?
-  perfilHistorico String?
   strCutout       String?
   piernaBuena     String?
   altura          Float?
