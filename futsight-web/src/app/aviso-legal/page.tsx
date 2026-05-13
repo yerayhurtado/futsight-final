@@ -32,7 +32,7 @@ export default function AvisoLegalPage() {
               <h2 className="text-2xl font-bold tracking-tight">Identificación</h2>
             </div>
             <div className="space-y-3 text-sm leading-relaxed text-gray-400">
-              <p><strong className="text-gray-200">Co-responsables:</strong> Miguel Mure Fernandez, Yeray Hurtado Dragón y Peter Gerard Asencio.</p>
+              <p><strong className="text-gray-200">Co-responsables:</strong> Miguel Mure Fernandez, Yeray Hurtado Dragón y Peter Gerard Ascencio Macias.</p>
               <p><strong className="text-gray-200">Ubicación:</strong> Carrer de Monlau, 6, 08027 Barcelona.</p>
               <p><strong className="text-gray-200">Email:</strong> FutSight@gmail.com.</p>
             </div>
