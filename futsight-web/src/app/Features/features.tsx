@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { Brain, LayoutGrid, GitCompare, TrendingUp, Database } from 'lucide-react';
+import { Brain, LayoutGrid, GitCompare, TrendingUp, Database, Activity } from 'lucide-react';
 
 const features = [
   {
@@ -63,6 +63,19 @@ const features = [
     bgAccent: 'bg-teal-500/10',
     borderAccent: 'border-teal-500/20',
     href: '/scouting',
+  },
+  {
+    icon: Activity,
+    number: '06',
+    title: 'Metodología XAI',
+    tag: 'Ciencia de Datos',
+    description: 'Descubre la ingeniería detrás de FutSight. Algoritmos GMM para hibridez táctica, modelos de valoración deterministas y transparencia algorítmica (XAI).',
+    color: 'from-rose-500 to-red-600',
+    accentColor: 'text-rose-400',
+    bgAccent: 'bg-rose-500/10',
+    borderAccent: 'border-rose-500/20',
+    href: '/metodologia',
+    cta: 'Ver Libro Blanco',
   },
 ];
 
@@ -185,7 +198,7 @@ export default function Features() {
 
                 {/* CTA arrow */}
                 <div className={`flex items-center gap-2 ${feature.accentColor} text-xs font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300`}>
-                  <span>Explorar módulo</span>
+                  <span>{(feature as any).cta || 'Explorar módulo'}</span>
                   <span>→</span>
                 </div>
               </Link>

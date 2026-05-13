@@ -105,12 +105,19 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="pt-8 border-t border-white/[0.05] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-gray-600">
-            © {new Date().getFullYear()} FutSight. Datos con fines informativos y educativos.
-          </p>
-          <Link href="/#metodologia" className="text-xs text-gray-600 hover:text-emerald-400 transition-colors">
-            Metodología →
-          </Link>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-gray-600">
+              © 2026 FutSight. Proyecto de innovación en IA y Big Data.
+            </p>
+          </div>
+          <div className="flex gap-4">
+            <Link href="/aviso-legal" className="text-xs text-gray-600 hover:text-emerald-400 transition-colors">
+              Política de Privacidad
+            </Link>
+            <Link href="/#metodologia" className="text-xs text-gray-600 hover:text-emerald-400 transition-colors">
+              Metodología →
+            </Link>
+          </div>
         </div>
       </div>
     </footer>
