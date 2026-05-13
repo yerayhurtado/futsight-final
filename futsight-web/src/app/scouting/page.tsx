@@ -3,7 +3,7 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { User, Shield, Zap, Globe, Search, Filter, X, ChevronLeft, ChevronRight, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { User, Shield, Zap, Globe, Search, Filter, X, ChevronLeft, ChevronRight, ChevronRight as ChevronRightIcon, LayoutGrid } from 'lucide-react';
 import { PlayerData } from '@/lib/getPlayers';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -168,6 +168,14 @@ export default function ScoutingPage() {
 
             <div className="relative z-10 pt-32 pb-20 px-6">
                 <div className="max-w-7xl mx-auto mb-12 text-center">
+                    <motion.div 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="inline-flex items-center gap-2 px-4 py-2 glass border border-emerald-500/20 rounded-full mb-6"
+                    >
+                        <LayoutGrid className="w-4 h-4 text-emerald-400" />
+                        <span className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.3em]">Catálogo de Jugadores</span>
+                    </motion.div>
                     <h1 className="text-5xl md:text-8xl font-black mb-6 leading-none tracking-tight">
                         <span className="bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">Explora</span>
                         <br />

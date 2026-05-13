@@ -131,7 +131,7 @@ _COLS_NUMERICAS = [
 ]
 
 # Columnas de rendimiento que se promedian entre temporadas
-_COLS_RENDIMIENTO = ["Gls", "Ast", "Won", "Min", "xG", "npxG", "KP", "SoT", "90s", "Tkl", "Int"]
+_COLS_RENDIMIENTO = ["Gls", "Ast", "Won", "Min", "xG", "npxG", "KP", "SoT", "90s", "Tkl", "Int", "onGA", "onxGA"]
 
 
 def _league_exigencia_coeff(league: object) -> float:

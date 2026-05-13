@@ -49,6 +49,8 @@ const EFFICIENCY_MAP: Record<string, { key: string; label: string; max: number; 
     ],
     gk: [
         { key: 'Cmp%', label: 'Precisión de pase', max: 100, description: 'Porcentaje de pases completados con los pies. Cada vez más relevante en porteros modernos.' },
+        { key: 'Won%', label: 'Eficacia en Duelos', max: 100, description: 'Porcentaje de duelos individuales ganados, fundamental en salidas y juego aéreo.' },
+        { key: '+/-90', label: 'Impacto en Marcador', max: 3, description: 'Diferencia de goles del equipo por cada 90 minutos con el portero en el campo.' },
     ],
 };
 
@@ -101,12 +103,12 @@ const KEY_METRICS_BY_POSITION: Record<string, { key: string; label: string; suff
         { key: 'SCA', label: 'Acc. Crea Tiro' },
     ],
     gk: [
-        { key: 'SoTA', label: 'Tiros Rec.' },
-        { key: 'Saves', label: 'Paradas' },
-        { key: 'Save%', label: 'Eficacia', suffix: '%' },
-        { key: 'CS', label: 'Porterías 0' },
-        { key: 'PSxG', label: 'Goles Evit.' },
+        { key: 'onGA', label: 'Goles Conc.' },
+        { key: 'onxGA', label: 'xG en Contra' },
+        { key: '+/-90', label: 'Dif. Goles/90' },
         { key: 'Cmp%', label: 'Prec. Pase', suffix: '%' },
+        { key: 'Recov', label: 'Recuperaciones' },
+        { key: 'Touches', label: 'Toques Balón' },
     ],
 };
 

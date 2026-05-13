@@ -128,9 +128,9 @@ export default function Hero() {
             </div>
 
             {/* Heading principal */}
-            <h1 className={`text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-black mb-6 leading-[0.95] tracking-tight ${mounted ? 'animate-fade-in-up delay-100' : 'opacity-0'}`}>
+            <h1 className={`text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-black mb-6 leading-[1.1] tracking-tight ${mounted ? 'animate-fade-in-up delay-100' : 'opacity-0'}`}>
               <span className="block text-white mb-2">El Futuro del</span>
-              <span className="block gradient-text-animated">Scouting</span>
+              <span className="block gradient-text-animated pb-2">Scouting</span>
             </h1>
 
             {/* Subtítulo */}
